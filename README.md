@@ -2,7 +2,9 @@
 
 This is an [esphome](https://esphome.io) external component of the Tesla Wall Connector Gen2 controller which was previously a standalone Arduino application (https://github.com/jnicolson/twc-controller).  The change to esphome means no more worrying about the boilerplate type setup of Wifi, Over the air updates, MQTT connections, etc.  Instead the focus just becomes on the Tesla load sharing protocol.
 
-Credit goes to [WinterDragoness](https://teslamotorsclub.com/tmc/members/winterdragoness.40930/) from the Tesla Motor Club forums for figuring out the protocol (with many others in the forum also giving help) and [Craig 128](https://teslamotorsclub.com/tmc/members/craig-128.113283/) for the original C code I used as a reference.  Both their projects are linked in the links section below - without both of them this wouldn't have been possible.
+Credits go to https://github.com/jnicolson and [WinterDragoness](https://teslamotorsclub.com/tmc/members/winterdragoness.40930/) from the Tesla Motor Club forums for figuring out the protocol (with many others in the forum also giving help) and [Craig 128](https://teslamotorsclub.com/tmc/members/craig-128.113283/) for the original C code I used as a reference.  Both their projects are linked in the links section below - without both of them this wouldn't have been possible.
+
+This fork was created after bringing the esphome-twc-controller from jnickolson in production and experiencing irregular charging interruptions. This fork is currently in production > 40 charging sessions without any more hick-ups.
 
 ## Features
 
