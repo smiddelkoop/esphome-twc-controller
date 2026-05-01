@@ -242,13 +242,6 @@ namespace esphome {
             // If the available current is higher than the maximum for our charger,
             // clamp it to the maximum
             available_current_ = clamp(current, min_current_, max_current_);
-            /*if (current <= MAX_CURRENT & current >= MIN_CURRENT) {
-                available_current_ = current;
-            } else if (current > MAX_CURRENT) {
-                available_current_ = MAX_CURRENT;
-            } else if (current < MIN_CURRENT) {
-                available_current_ = MIN_CURRENT;
-            }*/
         }
 
         void TeslaController::SendPresence(bool presence2) {
@@ -515,21 +508,6 @@ namespace esphome {
                     heartbeat->plug_inserted
                 );
             }
-
-            /*S_HEARTBEAT_T reply;
-            reply.command = SECONDARY_HEARTBEAT;
-            reply.src_twcid = twcid_
-            reply.dst_twcid = heartbeat->src_twcid;
-            reply.status =
-            reply.max_current =
-            reply.actual_current =
-            for (uint8_t i = 0; i < 4; i++) {
-                reply.padding[i] = 0x00;
-            }
-
-            reply.checksum = CalculateChecksum(reply);
-
-            SendData((uint8_t*)&reply, sizeof(reply));*/
         }
 
         void TeslaController::DecodeSecondaryHeartbeat(S_HEARTBEAT_T *heartbeat) {
@@ -595,23 +573,40 @@ namespace esphome {
 
             TeslaConnector *connector = GetConnector(presence->twcid);
 
-            if (!connector) {
-                ESP_LOGD(TAG, "New charger seen - adding to controller. ID: %04x, Sign: %02x, Max Allowable Current: %d\r\n",
-                    presence->twcid,
-                    presence_payload->sign,
-                    ntohs(presence_payload->max_allowable_current)
-                );
-
-                uint8_t max_allowable_current = (uint8_t)(ntohs(presence_payload->max_allowable_current)/100);
-
-                connector = new TeslaConnector(presence->twcid, max_allowable_current);
-                chargers[num_connected_chargers_++] = connector;
-
-                controller_io_->writeCharger(connector->twcid, connector->max_allowable_current);
-                controller_io_->writeTotalConnectedChargers(num_connected_chargers_);
-
-                controller_io_->resetIO(presence->twcid);
+            if (connector) {
+                // Known charger re-announced presence — TWC has reset mid-session.
+                // Throttle to once per 5 seconds to avoid a feedback loop where every
+                // Primary Presence we send triggers another Secondary Presence from the TWC.
+                uint32_t now = millis();
+                if (now - last_rehandshake_time_ > 5000) {
+                    last_rehandshake_time_ = now;
+                    uint8_t avail_a = (uint8_t)(ntohs(presence_payload->max_allowable_current) / 100);
+                    ESP_LOGW(TAG, "Known charger re-announced presence (TWC reset): ID: %04x, available_current=%dA - sending presence re-handshake",
+                             presence->twcid, avail_a);
+                    SendPresence();
+                    SendPresence2();
+                    current_changed_ = true;  // Force next heartbeat to re-send current limit
+                } else {
+                    ESP_LOGD(TAG, "Re-handshake cooldown active, suppressing presence response for ID: %04x", presence->twcid);
+                }
+                return;
             }
+
+            ESP_LOGD(TAG, "New charger seen - adding to controller. ID: %04x, Sign: %02x, Max Allowable Current: %d\r\n",
+                presence->twcid,
+                presence_payload->sign,
+                ntohs(presence_payload->max_allowable_current)
+            );
+
+            uint8_t max_allowable_current = (uint8_t)(ntohs(presence_payload->max_allowable_current)/100);
+
+            connector = new TeslaConnector(presence->twcid, max_allowable_current);
+            chargers[num_connected_chargers_++] = connector;
+
+            controller_io_->writeCharger(connector->twcid, connector->max_allowable_current);
+            controller_io_->writeTotalConnectedChargers(num_connected_chargers_);
+
+            controller_io_->resetIO(presence->twcid);
         }
 
         void TeslaController::UpdateTotalActualCurrent() {
