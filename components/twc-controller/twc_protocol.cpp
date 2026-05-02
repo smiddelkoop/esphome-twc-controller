@@ -83,6 +83,24 @@ namespace esphome {
             uint8_t commandNumber = 0;
 
             for (;;) {
+                // If DecodeSecondaryPresence flagged a TWC reset, re-run the full
+                // startup presence sequence (5x Presence + 5x Presence2 with 1s gaps)
+                // before resuming heartbeats.  This must run in startupTask_ so that
+                // the blocking vTaskDelay calls don't stall the main ESPHome loop.
+                if (twc->rehandshake_requested_) {
+                    twc->rehandshake_requested_ = false;
+                    ESP_LOGI(TAG, "TWC reset detected - re-running full presence sequence");
+                    for (uint8_t i = 0; i < 5; i++) {
+                        twc->SendPresence();
+                        vTaskDelay(1000 / portTICK_PERIOD_MS);
+                    }
+                    for (uint8_t i = 0; i < 5; i++) {
+                        twc->SendPresence2();
+                        vTaskDelay(1000 / portTICK_PERIOD_MS);
+                    }
+                    continue;  // Restart loop; pick up heartbeats on next iteration
+                }
+
                 if (twc->ChargersConnected() > 0) {
                     for (uint8_t i = 0; i < twc->ChargersConnected(); i++) {
                         twc->SendHeartbeat(twc->chargers[i]->twcid);
@@ -575,17 +593,17 @@ namespace esphome {
 
             if (connector) {
                 // Known charger re-announced presence — TWC has reset mid-session.
-                // Throttle to once per 5 seconds to avoid a feedback loop where every
-                // Primary Presence we send triggers another Secondary Presence from the TWC.
+                // Throttle to once per 5 seconds, then signal startupTask_ to run
+                // the full presence sequence (5x+5x with 1s gaps) rather than sending
+                // a single pair here on the main loop, which proved insufficient.
                 uint32_t now = millis();
                 if (now - last_rehandshake_time_ > 5000) {
                     last_rehandshake_time_ = now;
                     uint8_t avail_a = (uint8_t)(ntohs(presence_payload->max_allowable_current) / 100);
-                    ESP_LOGW(TAG, "Known charger re-announced presence (TWC reset): ID: %04x, available_current=%dA - sending presence re-handshake",
+                    ESP_LOGW(TAG, "Known charger re-announced presence (TWC reset): ID: %04x, available_current=%dA - requesting full re-handshake",
                              presence->twcid, avail_a);
-                    SendPresence();
-                    SendPresence2();
-                    current_changed_ = true;  // Force next heartbeat to re-send current limit
+                    rehandshake_requested_ = true;  // startupTask_ will run full 5+5 presence sequence
+                    current_changed_ = true;         // Force next heartbeat to re-send current limit
                 } else {
                     ESP_LOGD(TAG, "Re-handshake cooldown active, suppressing presence response for ID: %04x", presence->twcid);
                 }

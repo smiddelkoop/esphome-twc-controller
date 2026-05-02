@@ -228,6 +228,7 @@ namespace esphome {
                 uint8_t min_current_;
                 uint16_t stopstart_delay_;
                 bool current_changed_;
+                bool rehandshake_requested_{false};  // Set by DecodeSecondaryPresence; consumed by startupTask_
                 uint32_t last_rehandshake_time_{0};  // Debounce timestamp for secondary presence re-handshake
                 bool debug_;
                 uint8_t passive_mode_;
